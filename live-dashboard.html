@@ -26,14 +26,17 @@
     padding: clamp(16px,2vw,32px);
   }
   header{
-    display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px;
+    position:relative;
+    display:flex; align-items:center; justify-content:flex-start; flex-wrap:wrap; gap:8px;
+    min-height: 48px;
     margin-bottom: clamp(12px,1.5vh,24px);
     border-bottom: 1px solid var(--line);
     padding-bottom: clamp(10px,1.2vh,18px);
   }
   h1{
-    font-size: clamp(22px, 2.6vw, 40px);
-    font-weight:700; margin:0; letter-spacing:.3px;
+    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    font-size: clamp(20px, 2.4vw, 38px);
+    font-weight:700; margin:0; letter-spacing:.3px; white-space:nowrap;
   }
   .status{
     display:flex; align-items:center; gap:10px; flex-wrap:wrap;
@@ -54,6 +57,34 @@
     100%{ box-shadow:0 0 0 0 rgba(79,209,197,0); }
   }
   .debug{ color:var(--accent2); }
+  .summary-grid{
+    display:grid; grid-template-columns: 1fr 1fr; gap: clamp(12px,1.5vw,20px);
+    margin-bottom: clamp(16px,2vh,26px);
+  }
+  @media (max-width:700px){ .summary-grid{ grid-template-columns: 1fr; } }
+  .summary{
+    display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px;
+    background:var(--panel); border:1px solid var(--line); border-radius:16px;
+    padding: clamp(14px,2vh,22px) clamp(16px,2vw,28px);
+  }
+  .summary .label{
+    font-size: clamp(14px,1.3vw,18px); color:var(--muted); font-weight:600;
+  }
+  .summary .value{
+    font-size: clamp(30px,4vw,56px); font-weight:800; color:var(--accent);
+    line-height:1;
+  }
+  .summary .sub{
+    font-size: clamp(12px,1vw,15px); color:var(--muted); margin-top:4px;
+  }
+  .summary-track{
+    flex:1; min-width:160px; height:14px; border-radius:7px;
+    background:rgba(255,255,255,0.06); overflow:hidden; position:relative;
+  }
+  .summary-fill{
+    position:absolute; top:0; right:0; height:100%; border-radius:7px;
+    background:var(--accent); transition:width .5s ease;
+  }
   main{
     flex:1; background:var(--panel); border:1px solid var(--line);
     border-radius:16px; padding: clamp(14px,2vw,28px);
@@ -95,6 +126,23 @@
 </head>
 <body>
 <div class="wrap">
+  <div class="summary-grid">
+    <div class="summary" id="summary">
+      <div>
+        <div class="label">אחוז הצבעה כללי - מטה רוזנבוים</div>
+        <div class="value" id="summaryValue">0%</div>
+        <div class="sub" id="summarySub">0 מתוך 0 תומכים</div>
+      </div>
+      <div class="summary-track"><div class="summary-fill" id="summaryFill" style="width:0%"></div></div>
+    </div>
+    <div class="summary" id="likudSummary">
+      <div>
+        <div class="label">אחוז הצבעה כללי - ליכוד</div>
+        <div class="value" id="likudValue">0%</div>
+      </div>
+      <div class="summary-track"><div class="summary-fill" id="likudFill" style="width:0%"></div></div>
+    </div>
+  </div>
   <header>
     <h1>מטה רוזנבוים – אחוזי הצבעה בזמן אמת</h1>
     <div class="status">
@@ -114,14 +162,17 @@
    הגדרות
    ======================================================= */
 const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRX3F7XeiqRk3OJs6vHnxwm4kQ6LG30nuNzGzLfiqSwkOmnB7A83WwBVKjCt7QTW9CfkVBaxijei9hg/pub?gid=1400064446&single=true&output=csv";
+const LIKUD_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRX3F7XeiqRk3OJs6vHnxwm4kQ6LG30nuNzGzLfiqSwkOmnB7A83WwBVKjCt7QTW9CfkVBaxijei9hg/pub?gid=592290359&single=true&output=csv"; // אחוז הצבעה כללי לליכוד - תא A1
 
-const REFRESH_SECONDS   = 30;
-const FIRST_NAME_COLUMN = 0;
-const LAST_NAME_COLUMN  = 1;
-const VALUE_COLUMN      = 12;
-const HAS_HEADER_ROW    = true;
-const SORT_DESCENDING   = true;
-const SHOW_TOP_N        = 0; // 0 = הצג את כולם. שנה למספר (למשל 15) כדי להציג רק את המובילים.
+const REFRESH_SECONDS     = 30;
+const FIRST_NAME_COLUMN   = 0;
+const LAST_NAME_COLUMN    = 1;
+const SUPPORTERS_COLUMN   = 9;  // סך התומכים המאושרים והפוטנציאליים
+const VOTED_COLUMN        = 11; // סך התומכים שהצביעו
+const HAS_HEADER_ROW      = true;
+const SORT_DESCENDING     = true;
+const SHOW_TOP_N          = 0; // 0 = הצג את כולם.
+const MERGE_NAME_CONTAINS = 'איחוד הצלה'; // כל שם שמכיל את המחרוזת הזו יאוחד לשורה אחת
 
 /* ======================================================= */
 
@@ -187,6 +238,23 @@ function render(entries){
   });
 }
 
+async function fetchLikudPct(){
+  try{
+    const res = await fetch(LIKUD_CSV_URL + (LIKUD_CSV_URL.includes('?') ? '&' : '?') + 'cachebust=' + Date.now());
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const csvText = await res.text();
+    const parsed = Papa.parse(csvText.trim(), { skipEmptyLines: true });
+    const raw = (parsed.data?.[0]?.[0] || '0').toString().replace('%', '').trim();
+    const pct = parseFloat(raw);
+    const value = isNaN(pct) ? 0 : pct;
+    document.getElementById('likudValue').textContent = value + '%';
+    document.getElementById('likudFill').style.width = Math.max(value, 0) + '%';
+  }catch(err){
+    console.error('Likud fetch error:', err);
+    document.getElementById('likudValue').textContent = '—';
+  }
+}
+
 async function fetchData(){
   try{
     const res = await fetch(SHEET_CSV_URL + (SHEET_CSV_URL.includes('?') ? '&' : '?') + 'cachebust=' + Date.now());
@@ -197,18 +265,43 @@ async function fetchData(){
     let rows = parsed.data;
     if(HAS_HEADER_ROW) rows = rows.slice(1);
 
-    let entries = rows.map(r => {
+    let raw = rows.map(r => {
       const fn = (r[FIRST_NAME_COLUMN] || '').toString().trim();
       const ln = (r[LAST_NAME_COLUMN] || '').toString().trim();
       const fullName = (fn + ' ' + ln).trim();
-      const raw = (r[VALUE_COLUMN] || '0').toString().replace('%', '').trim();
-      const pct = parseFloat(raw);
-      return { name: fullName, pct: isNaN(pct) ? 0 : pct };
+      const supporters = parseInt((r[SUPPORTERS_COLUMN] || '0').toString().replace(/,/g, '').trim()) || 0;
+      const voted = parseInt((r[VOTED_COLUMN] || '0').toString().replace(/,/g, '').trim()) || 0;
+      return { name: fullName, supporters, voted };
     }).filter(e => e.name.length > 0);
 
+    // איחוד שורות ששמן מכיל את המחרוזת שהוגדרה (למשל "איחוד הצלה") לשורה אחת
+    const groups = new Map();
+    raw.forEach(e => {
+      const key = e.name.includes(MERGE_NAME_CONTAINS) ? MERGE_NAME_CONTAINS : e.name;
+      if(!groups.has(key)) groups.set(key, { name: key, supporters: 0, voted: 0 });
+      const g = groups.get(key);
+      g.supporters += e.supporters;
+      g.voted += e.voted;
+    });
+
+    let entries = Array.from(groups.values()).map(g => ({
+      name: g.name,
+      supporters: g.supporters,
+      voted: g.voted,
+      pct: g.supporters > 0 ? Math.round((g.voted / g.supporters) * 1000) / 10 : 0
+    }));
+
     document.getElementById('debugInfo').textContent =
-      'שורות: ' + rows.length + ' | שמות: ' + entries.length +
+      'שורות: ' + rows.length + ' | שמות (אחרי איחוד): ' + entries.length +
       (entries[0] ? (' | לדוגמה: "' + entries[0].name + '"') : ' | (אין שמות שזוהו!)');
+
+    // אחוז הצבעה כללי - כלל המטה
+    const totalSupporters = raw.reduce((s, e) => s + e.supporters, 0);
+    const totalVoted = raw.reduce((s, e) => s + e.voted, 0);
+    const overallPct = totalSupporters > 0 ? Math.round((totalVoted / totalSupporters) * 1000) / 10 : 0;
+    document.getElementById('summaryValue').textContent = overallPct + '%';
+    document.getElementById('summarySub').textContent = totalVoted.toLocaleString('he-IL') + ' מתוך ' + totalSupporters.toLocaleString('he-IL') + ' תומכים';
+    document.getElementById('summaryFill').style.width = Math.max(overallPct, 0) + '%';
 
     if(SORT_DESCENDING) entries.sort((a, b) => b.pct - a.pct);
     if(SHOW_TOP_N > 0) entries = entries.slice(0, SHOW_TOP_N);
@@ -237,7 +330,9 @@ setInterval(() => {
 }, 1000);
 
 fetchData();
+fetchLikudPct();
 setInterval(fetchData, REFRESH_SECONDS * 1000);
+setInterval(fetchLikudPct, REFRESH_SECONDS * 1000);
 </script>
 </body>
 </html>
