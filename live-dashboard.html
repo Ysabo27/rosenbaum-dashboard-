@@ -166,8 +166,8 @@ const LIKUD_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRX3F7Xei
 const REFRESH_SECONDS     = 10;
 const FIRST_NAME_COLUMN   = 0;
 const LAST_NAME_COLUMN    = 1;
-const SUPPORTERS_COLUMN   = 9;  // סך התומכים המאושרים והפוטנציאליים
-const VOTED_COLUMN        = 11; // סך התומכים שהצביעו
+const SUPPORTERS_COLUMN   = 9;  // סך התומכים המאושרים והפוטנציאליים - משמש לשקלול
+const PCT_COLUMN          = 12; // אחוזי הצבעה (עמודה M) - המקור האמיתי לאחוז שמעדכנים בגיליון
 const HAS_HEADER_ROW      = true;
 const SORT_DESCENDING     = true;
 const SHOW_TOP_N          = 0; // 0 = הצג את כולם.
@@ -272,31 +272,32 @@ async function fetchData(){
       const ln = (r[LAST_NAME_COLUMN] || '').toString().trim();
       const fullName = (fn + ' ' + ln).trim();
       const supporters = parseInt((r[SUPPORTERS_COLUMN] || '0').toString().replace(/,/g, '').trim()) || 0;
-      const voted = parseInt((r[VOTED_COLUMN] || '0').toString().replace(/,/g, '').trim()) || 0;
-      return { name: fullName, supporters, voted };
+      const pctRaw = (r[PCT_COLUMN] || '0').toString().replace('%', '').trim();
+      const pct = parseFloat(pctRaw);
+      return { name: fullName, supporters, pct: isNaN(pct) ? 0 : pct };
     }).filter(e => e.name.length > 0);
 
     // איחוד שורות ששמן מכיל את המחרוזת שהוגדרה (למשל "איחוד הצלה") לשורה אחת
+    // האיחוד הוא ממוצע משוקלל לפי כמות התומכים בכל שורה - לא ממוצע פשוט
     const groups = new Map();
     raw.forEach(e => {
       const key = e.name.includes(MERGE_NAME_CONTAINS) ? MERGE_NAME_CONTAINS : e.name;
-      if(!groups.has(key)) groups.set(key, { name: key, supporters: 0, voted: 0 });
+      if(!groups.has(key)) groups.set(key, { name: key, supporters: 0, weightedPctSum: 0 });
       const g = groups.get(key);
       g.supporters += e.supporters;
-      g.voted += e.voted;
+      g.weightedPctSum += e.pct * e.supporters;
     });
 
     let entries = Array.from(groups.values()).map(g => ({
       name: g.name,
       supporters: g.supporters,
-      voted: g.voted,
-      pct: g.supporters > 0 ? Math.round((g.voted / g.supporters) * 1000) / 10 : 0
+      pct: g.supporters > 0 ? Math.round((g.weightedPctSum / g.supporters) * 10) / 10 : 0
     }));
 
-    // אחוז הצבעה כללי - כלל המטה
+    // אחוז הצבעה כללי - כלל המטה (ממוצע משוקלל לפי תומכים על כל השורות המקוריות)
     const totalSupporters = raw.reduce((s, e) => s + e.supporters, 0);
-    const totalVoted = raw.reduce((s, e) => s + e.voted, 0);
-    const overallPct = totalSupporters > 0 ? Math.round((totalVoted / totalSupporters) * 1000) / 10 : 0;
+    const totalWeightedPct = raw.reduce((s, e) => s + (e.pct * e.supporters), 0);
+    const overallPct = totalSupporters > 0 ? Math.round((totalWeightedPct / totalSupporters) * 10) / 10 : 0;
     document.getElementById('summaryValue').textContent = overallPct + '%';
     document.getElementById('summaryFill').style.width = Math.max(overallPct, 0) + '%';
 
