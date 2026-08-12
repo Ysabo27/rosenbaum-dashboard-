@@ -102,14 +102,23 @@
     align-items:stretch;
   }
   .row{
-    display:grid;
-    grid-template-columns: 40px minmax(120px, 260px) 1fr 64px;
-    align-items:center;
+    display:flex; flex-direction:column; gap: clamp(6px,0.9vh,10px);
+    background: rgba(255,255,255,0.03);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding: clamp(8px,1.1vh,14px) clamp(10px,1.3vw,16px);
+    min-width:0;
+  }
+  .row-head{
+    display:flex; align-items:baseline; justify-content:space-between;
     gap: clamp(10px,1.5vw,20px);
     min-width:0;
   }
+  .row-head .name-wrap{
+    display:flex; align-items:baseline; gap:8px; min-width:0; flex:1;
+  }
   .rank{
-    color:var(--muted); font-size: clamp(13px,1.1vw,16px); text-align:center; font-weight:600;
+    color:var(--muted); font-size: clamp(13px,1.1vw,16px); font-weight:600; flex-shrink:0;
   }
   .name{
     font-size: clamp(14px,1.4vw,19px); font-weight:600; color:var(--text);
@@ -117,17 +126,18 @@
   }
   .bar-track{
     background: rgba(255,255,255,0.06);
-    border-radius:8px; height: clamp(22px,2.4vh,32px);
-    position:relative; overflow:hidden;
+    border-radius:12px; height: clamp(28px,3.6vh,46px);
+    position:relative; overflow:hidden; width:100%;
   }
   .bar-fill{
     position:absolute; top:0; right:0; height:100%;
-    border-radius:8px;
+    border-radius:12px;
     transition: width .5s ease;
     min-width: 2px;
+    box-shadow: 0 0 14px 0 rgba(0,0,0,.25) inset;
   }
   .pct{
-    font-size: clamp(14px,1.3vw,18px); font-weight:700; text-align:left;
+    font-size: clamp(18px,1.9vw,26px); font-weight:800; flex-shrink:0; color:var(--text);
   }
 </style>
 </head>
@@ -218,6 +228,12 @@ function render(entries){
     const row = document.createElement('div');
     row.className = 'row';
 
+    const head = document.createElement('div');
+    head.className = 'row-head';
+
+    const nameWrap = document.createElement('div');
+    nameWrap.className = 'name-wrap';
+
     const rank = document.createElement('div');
     rank.className = 'rank';
     rank.textContent = (i + 1) + '.';
@@ -225,6 +241,16 @@ function render(entries){
     const name = document.createElement('div');
     name.className = 'name';
     name.textContent = e.name;
+
+    nameWrap.appendChild(rank);
+    nameWrap.appendChild(name);
+
+    const pct = document.createElement('div');
+    pct.className = 'pct';
+    pct.textContent = e.pct + '%';
+
+    head.appendChild(nameWrap);
+    head.appendChild(pct);
 
     const track = document.createElement('div');
     track.className = 'bar-track';
@@ -234,14 +260,8 @@ function render(entries){
     fill.style.background = barColor(e.pct);
     track.appendChild(fill);
 
-    const pct = document.createElement('div');
-    pct.className = 'pct';
-    pct.textContent = e.pct + '%';
-
-    row.appendChild(rank);
-    row.appendChild(name);
+    row.appendChild(head);
     row.appendChild(track);
-    row.appendChild(pct);
     rowsEl.appendChild(row);
   });
 }
