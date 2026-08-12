@@ -95,7 +95,11 @@
     color:var(--muted); font-size: clamp(14px,1.4vw,20px); text-align:center;
     padding: 60px 4vw;
   }
-  .rows{ display:flex; flex-direction:column; gap:10px; }
+  .rows{
+    column-width: 520px;
+    column-gap: clamp(20px, 2.5vw, 40px);
+  }
+  .row{ break-inside: avoid; margin-bottom: 10px; }
   .row{
     display:grid;
     grid-template-columns: 40px minmax(140px, 260px) 1fr 64px;
