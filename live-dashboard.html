@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>מטה רוזנבוים – אחוזי הצבעה</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  :root{
+    --bg: #0B1220;
+    --panel: #121B2E;
+    --line: #1E2A44;
+    --text: #E8EDF7;
+    --muted: #7C8AA8;
+    --accent: #4FD1C5;
+    --accent2: #F0B429;
+    --danger: #F0645F;
+  }
+  *{ box-sizing:border-box; }
+  html,body{
+    margin:0; padding:0; height:100%;
+    background:var(--bg); color:var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, Arial, sans-serif;
+  }
+  .wrap{
+    min-height:100vh; display:flex; flex-direction:column;
+    padding: clamp(16px,2vw,32px);
+  }
+  header{
+    display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px;
+    margin-bottom: clamp(12px,1.5vh,24px);
+    border-bottom: 1px solid var(--line);
+    padding-bottom: clamp(10px,1.2vh,18px);
+  }
+  h1{
+    font-size: clamp(22px, 2.6vw, 40px);
+    font-weight:700; margin:0; letter-spacing:.3px;
+  }
+  .status{
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    font-size: clamp(13px,1.1vw,16px);
+    color:var(--muted);
+  }
+  .dot{
+    width:10px; height:10px; border-radius:50%;
+    background:var(--accent);
+    box-shadow:0 0 0 0 rgba(79,209,197,.6);
+    animation: pulse 2s infinite;
+    flex-shrink:0;
+  }
+  .dot.err{ background:var(--danger); box-shadow:none; animation:none; }
+  @keyframes pulse{
+    0%{ box-shadow:0 0 0 0 rgba(79,209,197,.55); }
+    70%{ box-shadow:0 0 0 10px rgba(79,209,197,0); }
+    100%{ box-shadow:0 0 0 0 rgba(79,209,197,0); }
+  }
+  .debug{ color:var(--accent2); }
+  main{
+    flex:1; background:var(--panel); border:1px solid var(--line);
+    border-radius:16px; padding: clamp(14px,2vw,28px);
+    position:relative;
+  }
+  .msg{
+    color:var(--muted); font-size: clamp(14px,1.4vw,20px); text-align:center;
+    padding: 60px 4vw;
+  }
+  .rows{ display:flex; flex-direction:column; gap:10px; }
+  .row{
+    display:grid;
+    grid-template-columns: 40px minmax(140px, 260px) 1fr 64px;
+    align-items:center;
+    gap: clamp(10px,1.5vw,20px);
+  }
+  .rank{
+    color:var(--muted); font-size: clamp(13px,1.1vw,16px); text-align:center; font-weight:600;
+  }
+  .name{
+    font-size: clamp(14px,1.4vw,19px); font-weight:600; color:var(--text);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .bar-track{
+    background: rgba(255,255,255,0.06);
+    border-radius:8px; height: clamp(22px,2.4vh,32px);
+    position:relative; overflow:hidden;
+  }
+  .bar-fill{
+    position:absolute; top:0; right:0; height:100%;
+    border-radius:8px;
+    transition: width .5s ease;
+    min-width: 2px;
+  }
+  .pct{
+    font-size: clamp(14px,1.3vw,18px); font-weight:700; text-align:left;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>מטה רוזנבוים – אחוזי הצבעה בזמן אמת</h1>
+    <div class="status">
+      <span class="dot" id="dot"></span>
+      <span id="statusText">טוען...</span>
+      <span class="debug" id="debugInfo"></span>
+    </div>
+  </header>
+  <main>
+    <div class="msg" id="msg" style="display:none"></div>
+    <div class="rows" id="rows"></div>
+  </main>
+</div>
+
+<script>
+/* =======================================================
+   הגדרות
+   ======================================================= */
+const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRX3F7XeiqRk3OJs6vHnxwm4kQ6LG30nuNzGzLfiqSwkOmnB7A83WwBVKjCt7QTW9CfkVBaxijei9hg/pub?gid=1400064446&single=true&output=csv";
+
+const REFRESH_SECONDS   = 30;
+const FIRST_NAME_COLUMN = 0;
+const LAST_NAME_COLUMN  = 1;
+const VALUE_COLUMN      = 12;
+const HAS_HEADER_ROW    = true;
+const SORT_DESCENDING   = true;
+const SHOW_TOP_N        = 0; // 0 = הצג את כולם. שנה למספר (למשל 15) כדי להציג רק את המובילים.
+
+/* ======================================================= */
+
+let secondsAgo = 0;
+let lastUpdate = null;
+
+function barColor(pct){
+  if(pct >= 75) return '#4FD1C5';
+  if(pct >= 50) return '#F0B429';
+  return '#F0645F';
+}
+
+function setStatus(ok, text){
+  document.getElementById('dot').className = 'dot' + (ok ? '' : ' err');
+  document.getElementById('statusText').textContent = text;
+}
+
+function showMessage(text){
+  const m = document.getElementById('msg');
+  const rowsEl = document.getElementById('rows');
+  if(text){
+    m.style.display = 'block';
+    m.textContent = text;
+    rowsEl.style.display = 'none';
+  } else {
+    m.style.display = 'none';
+    rowsEl.style.display = 'flex';
+  }
+}
+
+function render(entries){
+  const rowsEl = document.getElementById('rows');
+  rowsEl.innerHTML = '';
+  entries.forEach((e, i) => {
+    const row = document.createElement('div');
+    row.className = 'row';
+
+    const rank = document.createElement('div');
+    rank.className = 'rank';
+    rank.textContent = (i + 1) + '.';
+
+    const name = document.createElement('div');
+    name.className = 'name';
+    name.textContent = e.name;
+
+    const track = document.createElement('div');
+    track.className = 'bar-track';
+    const fill = document.createElement('div');
+    fill.className = 'bar-fill';
+    fill.style.width = Math.max(e.pct, 0) + '%';
+    fill.style.background = barColor(e.pct);
+    track.appendChild(fill);
+
+    const pct = document.createElement('div');
+    pct.className = 'pct';
+    pct.textContent = e.pct + '%';
+
+    row.appendChild(rank);
+    row.appendChild(name);
+    row.appendChild(track);
+    row.appendChild(pct);
+    rowsEl.appendChild(row);
+  });
+}
+
+async function fetchData(){
+  try{
+    const res = await fetch(SHEET_CSV_URL + (SHEET_CSV_URL.includes('?') ? '&' : '?') + 'cachebust=' + Date.now());
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const csvText = await res.text();
+
+    const parsed = Papa.parse(csvText.trim(), { skipEmptyLines: true });
+    let rows = parsed.data;
+    if(HAS_HEADER_ROW) rows = rows.slice(1);
+
+    let entries = rows.map(r => {
+      const fn = (r[FIRST_NAME_COLUMN] || '').toString().trim();
+      const ln = (r[LAST_NAME_COLUMN] || '').toString().trim();
+      const fullName = (fn + ' ' + ln).trim();
+      const raw = (r[VALUE_COLUMN] || '0').toString().replace('%', '').trim();
+      const pct = parseFloat(raw);
+      return { name: fullName, pct: isNaN(pct) ? 0 : pct };
+    }).filter(e => e.name.length > 0);
+
+    document.getElementById('debugInfo').textContent =
+      'שורות: ' + rows.length + ' | שמות: ' + entries.length +
+      (entries[0] ? (' | לדוגמה: "' + entries[0].name + '"') : ' | (אין שמות שזוהו!)');
+
+    if(SORT_DESCENDING) entries.sort((a, b) => b.pct - a.pct);
+    if(SHOW_TOP_N > 0) entries = entries.slice(0, SHOW_TOP_N);
+
+    if(entries.length === 0){
+      showMessage('לא זוהו שורות עם שם בגיליון. בדקי את מספרי העמודות בהגדרות.');
+    } else {
+      showMessage('');
+      render(entries);
+    }
+
+    lastUpdate = new Date();
+    secondsAgo = 0;
+    setStatus(true, 'מעודכן לפני 0 שניות');
+  }catch(err){
+    console.error(err);
+    setStatus(false, 'שגיאה: ' + err.message);
+    document.getElementById('debugInfo').textContent = '';
+    showMessage('שגיאה בטעינת נתונים. בדקי שהלינק לגיליון תקין ופורסם כ-CSV.');
+  }
+}
+
+setInterval(() => {
+  secondsAgo++;
+  if(lastUpdate) setStatus(true, 'מעודכן לפני ' + secondsAgo + ' שניות');
+}, 1000);
+
+fetchData();
+setInterval(fetchData, REFRESH_SECONDS * 1000);
+</script>
+</body>
+</html>
