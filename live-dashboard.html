@@ -159,7 +159,6 @@
     color:var(--text); flex:1; min-width:0;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
-  .member-row .member-sup{ flex-shrink:0; }
   .member-row .member-pct{
     flex-shrink:0; font-weight:700; color:var(--text); min-width:44px; text-align:left;
   }
@@ -211,6 +210,7 @@ const PCT_COLUMN          = 12; // אחוזי הצבעה (עמודה M) - המק
 const HAS_HEADER_ROW      = true;
 const SORT_DESCENDING     = true;
 const SHOW_TOP_N          = 0; // 0 = הצג את כולם.
+const MIN_SUPPORTERS_TO_SHOW = 10; // מי שיש לו פחות ממספר זה של מתפקדים לא יוצג בגרף
 // כל קבוצה: name שמכיל את match יאוחד לשורה אחת המוצגת בשם label,
 // עם אפשרות להרחיב ולראות כמה כל תת-פעיל הביא
 const MERGE_GROUPS = [
@@ -322,16 +322,11 @@ function render(entries){
         mname.className = 'member-name';
         mname.textContent = m.name;
 
-        const msup = document.createElement('div');
-        msup.className = 'member-sup';
-        msup.textContent = m.supporters.toLocaleString('he-IL') + ' תומכים';
-
         const mpct = document.createElement('div');
         mpct.className = 'member-pct';
         mpct.textContent = m.pct + '%';
 
         mrow.appendChild(mname);
-        mrow.appendChild(msup);
         mrow.appendChild(mpct);
         membersEl.appendChild(mrow);
       });
@@ -399,6 +394,9 @@ async function fetchData(){
       pct: g.supporters > 0 ? Math.round((g.weightedPctSum / g.supporters) * 10) / 10 : 0,
       members: g.members.length > 1 ? g.members.sort((a, b) => b.pct - a.pct) : null
     }));
+
+    // מי שיש לו פחות ממספר המתפקדים המינימלי לא מוצג בגרף בכלל
+    entries = entries.filter(e => e.supporters >= MIN_SUPPORTERS_TO_SHOW);
 
     // אחוז הצבעה כללי - כלל המטה (ממוצע משוקלל לפי תומכים על כל השורות המקוריות)
     const totalSupporters = raw.reduce((s, e) => s + e.supporters, 0);
