@@ -102,14 +102,23 @@
     align-items:stretch;
   }
   .row{
-    display:grid;
-    grid-template-columns: 40px minmax(120px, 260px) 1fr 64px;
-    align-items:center;
+    display:flex; flex-direction:column; gap: clamp(6px,0.9vh,10px);
+    background: rgba(255,255,255,0.03);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding: clamp(8px,1.1vh,14px) clamp(10px,1.3vw,16px);
+    min-width:0;
+  }
+  .row-head{
+    display:flex; align-items:baseline; justify-content:space-between;
     gap: clamp(10px,1.5vw,20px);
     min-width:0;
   }
+  .row-head .name-wrap{
+    display:flex; align-items:baseline; gap:8px; min-width:0; flex:1;
+  }
   .rank{
-    color:var(--muted); font-size: clamp(13px,1.1vw,16px); text-align:center; font-weight:600;
+    color:var(--muted); font-size: clamp(13px,1.1vw,16px); font-weight:600; flex-shrink:0;
   }
   .name{
     font-size: clamp(14px,1.4vw,19px); font-weight:600; color:var(--text);
@@ -117,17 +126,42 @@
   }
   .bar-track{
     background: rgba(255,255,255,0.06);
-    border-radius:8px; height: clamp(22px,2.4vh,32px);
-    position:relative; overflow:hidden;
+    border-radius:12px; height: clamp(28px,3.6vh,46px);
+    position:relative; overflow:hidden; width:100%;
   }
   .bar-fill{
     position:absolute; top:0; right:0; height:100%;
-    border-radius:8px;
+    border-radius:12px;
     transition: width .5s ease;
     min-width: 2px;
+    box-shadow: 0 0 14px 0 rgba(0,0,0,.25) inset;
   }
   .pct{
-    font-size: clamp(14px,1.3vw,18px); font-weight:700; text-align:left;
+    font-size: clamp(18px,1.9vw,26px); font-weight:800; flex-shrink:0; color:var(--text);
+  }
+  .expand-toggle{
+    background:none; border:none; color:var(--muted); cursor:pointer;
+    font-size: clamp(12px,1.2vw,16px); line-height:1; padding:2px 4px;
+    transition: transform .2s ease, color .2s ease; flex-shrink:0;
+  }
+  .expand-toggle:hover{ color:var(--text); }
+  .expand-toggle.open{ transform: rotate(180deg); color:var(--text); }
+  .members{
+    display:none; flex-direction:column; gap: clamp(5px,0.7vh,8px);
+    margin-top:2px; padding-top: clamp(6px,0.9vh,10px);
+    border-top:1px dashed var(--line);
+  }
+  .member-row{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    font-size: clamp(12px,1.1vw,15px); color:var(--muted);
+  }
+  .member-row .member-name{
+    color:var(--text); flex:1; min-width:0;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .member-row .member-sup{ flex-shrink:0; }
+  .member-row .member-pct{
+    flex-shrink:0; font-weight:700; color:var(--text); min-width:44px; text-align:left;
   }
 </style>
 </head>
@@ -177,13 +211,19 @@ const PCT_COLUMN          = 12; // אחוזי הצבעה (עמודה M) - המק
 const HAS_HEADER_ROW      = true;
 const SORT_DESCENDING     = true;
 const SHOW_TOP_N          = 0; // 0 = הצג את כולם.
-const MERGE_NAME_CONTAINS = 'איחוד הצלה'; // כל שם שמכיל את המחרוזת הזו יאוחד לשורה אחת
+// כל קבוצה: name שמכיל את match יאוחד לשורה אחת המוצגת בשם label,
+// עם אפשרות להרחיב ולראות כמה כל תת-פעיל הביא
+const MERGE_GROUPS = [
+  { match: 'איחוד הצלה', label: 'איחוד הצלה' },
+  { match: 'חייט',        label: 'אלכסנדר חייט' },
+];
 
 /* ======================================================= */
 
 let secondsAgo = 0;
 let lastUpdate = null;
 let hasRenderedOnce = false;
+const expandedGroups = new Set(); // שמות קבוצות מאוחדות שהמשתמש הרחיב, נשמר בין רענונים
 
 function barColor(pct){
   if(pct >= 75) return '#4FD1C5';
@@ -218,6 +258,12 @@ function render(entries){
     const row = document.createElement('div');
     row.className = 'row';
 
+    const head = document.createElement('div');
+    head.className = 'row-head';
+
+    const nameWrap = document.createElement('div');
+    nameWrap.className = 'name-wrap';
+
     const rank = document.createElement('div');
     rank.className = 'rank';
     rank.textContent = (i + 1) + '.';
@@ -225,6 +271,33 @@ function render(entries){
     const name = document.createElement('div');
     name.className = 'name';
     name.textContent = e.name;
+
+    nameWrap.appendChild(rank);
+    nameWrap.appendChild(name);
+
+    let membersEl = null;
+    if(e.members){
+      const isOpen = expandedGroups.has(e.name);
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'expand-toggle' + (isOpen ? ' open' : '');
+      toggle.setAttribute('aria-label', 'הצג פירוט תתי פעילים');
+      toggle.textContent = '▾';
+      toggle.addEventListener('click', () => {
+        const willOpen = !expandedGroups.has(e.name);
+        if(willOpen) expandedGroups.add(e.name); else expandedGroups.delete(e.name);
+        toggle.classList.toggle('open', willOpen);
+        if(membersEl) membersEl.style.display = willOpen ? 'flex' : 'none';
+      });
+      nameWrap.appendChild(toggle);
+    }
+
+    const pct = document.createElement('div');
+    pct.className = 'pct';
+    pct.textContent = e.pct + '%';
+
+    head.appendChild(nameWrap);
+    head.appendChild(pct);
 
     const track = document.createElement('div');
     track.className = 'bar-track';
@@ -234,14 +307,37 @@ function render(entries){
     fill.style.background = barColor(e.pct);
     track.appendChild(fill);
 
-    const pct = document.createElement('div');
-    pct.className = 'pct';
-    pct.textContent = e.pct + '%';
-
-    row.appendChild(rank);
-    row.appendChild(name);
+    row.appendChild(head);
     row.appendChild(track);
-    row.appendChild(pct);
+
+    if(e.members){
+      membersEl = document.createElement('div');
+      membersEl.className = 'members';
+      membersEl.style.display = expandedGroups.has(e.name) ? 'flex' : 'none';
+      e.members.forEach(m => {
+        const mrow = document.createElement('div');
+        mrow.className = 'member-row';
+
+        const mname = document.createElement('div');
+        mname.className = 'member-name';
+        mname.textContent = m.name;
+
+        const msup = document.createElement('div');
+        msup.className = 'member-sup';
+        msup.textContent = m.supporters.toLocaleString('he-IL') + ' תומכים';
+
+        const mpct = document.createElement('div');
+        mpct.className = 'member-pct';
+        mpct.textContent = m.pct + '%';
+
+        mrow.appendChild(mname);
+        mrow.appendChild(msup);
+        mrow.appendChild(mpct);
+        membersEl.appendChild(mrow);
+      });
+      row.appendChild(membersEl);
+    }
+
     rowsEl.appendChild(row);
   });
 }
@@ -283,21 +379,25 @@ async function fetchData(){
       return { name: fullName, supporters, pct: isNaN(pct) ? 0 : pct };
     }).filter(e => e.name.length > 0);
 
-    // איחוד שורות ששמן מכיל את המחרוזת שהוגדרה (למשל "איחוד הצלה") לשורה אחת
+    // איחוד שורות ששמן מכיל את אחת המחרוזות שהוגדרו ב-MERGE_GROUPS לשורה אחת
     // האיחוד הוא ממוצע משוקלל לפי כמות התומכים בכל שורה - לא ממוצע פשוט
+    // כל תת-פעיל המקורי נשמר תחת members כדי שאפשר יהיה להרחיב ולראות כמה כל אחד הביא
     const groups = new Map();
     raw.forEach(e => {
-      const key = e.name.includes(MERGE_NAME_CONTAINS) ? MERGE_NAME_CONTAINS : e.name;
-      if(!groups.has(key)) groups.set(key, { name: key, supporters: 0, weightedPctSum: 0 });
+      const rule = MERGE_GROUPS.find(r => e.name.includes(r.match));
+      const key = rule ? rule.label : e.name;
+      if(!groups.has(key)) groups.set(key, { name: key, supporters: 0, weightedPctSum: 0, members: [] });
       const g = groups.get(key);
       g.supporters += e.supporters;
       g.weightedPctSum += e.pct * e.supporters;
+      g.members.push({ name: e.name, supporters: e.supporters, pct: e.pct });
     });
 
     let entries = Array.from(groups.values()).map(g => ({
       name: g.name,
       supporters: g.supporters,
-      pct: g.supporters > 0 ? Math.round((g.weightedPctSum / g.supporters) * 10) / 10 : 0
+      pct: g.supporters > 0 ? Math.round((g.weightedPctSum / g.supporters) * 10) / 10 : 0,
+      members: g.members.length > 1 ? g.members.sort((a, b) => b.pct - a.pct) : null
     }));
 
     // אחוז הצבעה כללי - כלל המטה (ממוצע משוקלל לפי תומכים על כל השורות המקוריות)
