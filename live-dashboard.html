@@ -211,6 +211,8 @@ const HAS_HEADER_ROW      = true;
 const SORT_DESCENDING     = true;
 const SHOW_TOP_N          = 0; // 0 = הצג את כולם.
 const MIN_SUPPORTERS_TO_SHOW = 10; // מי שיש לו פחות ממספר זה של מתפקדים לא יוצג בגרף
+// שם (או חלק משם) של פעילים שלא רוצים להציג בגרף בכלל - למשל: ['ישראל ישראלי', 'שם משפחה']
+const EXCLUDE_NAMES = [];
 // כל קבוצה: name שמכיל את match יאוחד לשורה אחת המוצגת בשם label,
 // עם אפשרות להרחיב ולראות כמה כל תת-פעיל הביא
 const MERGE_GROUPS = [
@@ -373,6 +375,9 @@ async function fetchData(){
       const pct = parseFloat(pctRaw);
       return { name: fullName, supporters, pct: isNaN(pct) ? 0 : pct };
     }).filter(e => e.name.length > 0);
+
+    // הסרה מוחלטת של פעילים שהוגדרו ב-EXCLUDE_NAMES - לא יופיעו בגרף ולא ישוקללו בשום חישוב
+    raw = raw.filter(e => !EXCLUDE_NAMES.some(x => e.name.includes(x)));
 
     // איחוד שורות ששמן מכיל את אחת המחרוזות שהוגדרו ב-MERGE_GROUPS לשורה אחת
     // האיחוד הוא ממוצע משוקלל לפי כמות התומכים בכל שורה - לא ממוצע פשוט
