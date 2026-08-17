@@ -203,6 +203,7 @@ const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRX3F7Xei
 const LIKUD_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRX3F7XeiqRk3OJs6vHnxwm4kQ6LG30nuNzGzLfiqSwkOmnB7A83WwBVKjCt7QTW9CfkVBaxijei9hg/pub?gid=592290359&single=true&output=csv"; // אחוז הצבעה כללי לליכוד - תא A1
 
 const REFRESH_SECONDS     = 10;
+const AUTO_REFRESH_ENABLED = false; // כבוי זמנית - עוצר את כל הרענון האוטומטי (כולל ניסיונות חוזרים בזמן שגיאה)
 const FIRST_NAME_COLUMN   = 0;
 const LAST_NAME_COLUMN    = 1;
 const SUPPORTERS_COLUMN   = 9;  // סך התומכים המאושרים והפוטנציאליים - משמש לשקלול
@@ -225,6 +226,7 @@ const MERGE_GROUPS = [
 let secondsAgo = 0;
 let lastUpdate = null;
 let hasRenderedOnce = false;
+let fetchSeq = 0; // מונה בקשות - מונע ממצב שבו תגובה ישנה שמגיעה באיחור "דורסת" תגובה חדשה יותר וגורמת לקפיצות
 const expandedGroups = new Set(); // שמות קבוצות מאוחדות שהמשתמש הרחיב, נשמר בין רענונים
 
 function barColor(pct){
@@ -357,10 +359,12 @@ async function fetchLikudPct(){
 }
 
 async function fetchData(){
+  const seq = ++fetchSeq; // מספר סידורי לבקשה הזו
   try{
     const res = await fetch(SHEET_CSV_URL + (SHEET_CSV_URL.includes('?') ? '&' : '?') + 'cachebust=' + Date.now());
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const csvText = await res.text();
+    if(seq !== fetchSeq) return; // הגיעה תגובה ישנה אחרי שכבר יצאה בקשה חדשה יותר - מתעלמים כדי לא לקפוץ אחורה
 
     const parsed = Papa.parse(csvText.trim(), { skipEmptyLines: true });
     let rows = parsed.data;
@@ -425,11 +429,12 @@ async function fetchData(){
     secondsAgo = 0;
     setStatus(true, 'מעודכן לפני 0 שניות');
   }catch(err){
+    if(seq !== fetchSeq) return; // בקשה ישנה שנכשלה אחרי שכבר יצאה בקשה חדשה יותר - מתעלמים
     console.error(err);
     if(hasRenderedOnce){
       // כשל זמני - נשמור על הרשימה האחרונה שהוצגה במקום למחוק אותה, ורק נסמן שיש בעיה זמנית בסטטוס
       setStatus('stale', 'תקלה זמנית בעדכון - מציג נתונים אחרונים ידועים');
-      setTimeout(fetchData, 5000); // ניסיון חוזר מהיר במקום לחכות למחזור המלא
+      if(AUTO_REFRESH_ENABLED) setTimeout(fetchData, 5000); // ניסיון חוזר מהיר במקום לחכות למחזור המלא
     } else {
       setStatus(false, 'שגיאה: ' + err.message);
       showMessage('שגיאה בטעינת נתונים. בדקי שהלינק לגיליון תקין ופורסם כ-CSV.');
@@ -444,8 +449,10 @@ setInterval(() => {
 
 fetchData();
 fetchLikudPct();
-setInterval(fetchData, REFRESH_SECONDS * 1000);
-setInterval(fetchLikudPct, REFRESH_SECONDS * 1000);
+if(AUTO_REFRESH_ENABLED){
+  setInterval(fetchData, REFRESH_SECONDS * 1000);
+  setInterval(fetchLikudPct, REFRESH_SECONDS * 1000);
+}
 </script>
 </body>
 </html>
